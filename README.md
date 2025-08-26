@@ -55,6 +55,34 @@ result = calculate_raf(
 
 For more details on the SLD format, see the `datamodels.py` file.
 
+## Sample Data
+
+The package includes comprehensive sample data for testing and demonstration purposes:
+
+```python
+from hccinfhir import (
+    get_eob_sample,
+    get_eob_sample_list,
+    get_837_sample,
+    get_837_sample_list,
+    list_available_samples
+)
+
+# Get individual EOB samples (cases 1, 2, or 3)
+eob_data = get_eob_sample(1)
+
+# Get multiple EOB samples (up to 200 available)
+eob_list = get_eob_sample_list(limit=10)
+
+# Get 837 claim samples (cases 0 through 11)
+claim_data = get_837_sample(0)
+
+# Get information about available samples
+info = list_available_samples()
+```
+
+For detailed usage examples, see the `examples/sample_data_usage.py` file.
+
 ## Core Components
 
 ### 1. Extractor Module

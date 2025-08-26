@@ -90,6 +90,7 @@ class TestHCCInFHIR:
 
     def test_run_with_eob(self, sample_demographics, sample_eob):
         processor = HCCInFHIR()
+        
         result = processor.run(sample_eob, sample_demographics)
         assert isinstance(result, dict)
         assert 'risk_score' in result
@@ -98,6 +99,7 @@ class TestHCCInFHIR:
         assert isinstance(result['service_level_data'], list)
         
         # Verify service level data processing
+        print(result['service_level_data'])
         sld = result['service_level_data'][0]
         assert isinstance(sld, ServiceLevelData)
 

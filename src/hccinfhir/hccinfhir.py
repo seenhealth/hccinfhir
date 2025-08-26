@@ -81,8 +81,9 @@ class HCCInFHIR:
         
         # Extract and filter service level data
         sld_list = extract_sld_list(eob_list)
+
         if self.filter_claims:
-            sld_list = apply_filter(sld_list, self.professional_cpt)
+            sld_list = apply_filter(sld_list, professional_cpt=self.professional_cpt)
             
         # Calculate RAF score
         unique_dx_codes = self._get_unique_diagnosis_codes(sld_list)

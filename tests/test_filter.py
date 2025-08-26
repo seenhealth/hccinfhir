@@ -39,7 +39,7 @@ def test_apply_filter_eob():
     eob_list = load_sample_eob_list()
     sld_list = extract_sld_list(eob_list)    
     filtered_sld_list = apply_filter(sld_list)
-    
+
     assert len(sld_list) == 204
     # after the filtering is applied, we have a lot less ServiceLevelData objects
     assert len(filtered_sld_list) == 15

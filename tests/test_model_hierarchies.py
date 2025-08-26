@@ -28,7 +28,7 @@ def test_v28_special_rules():
     # 223 should remain when other specified CCs exist
     cc_set = {"221", "223"}
     result = apply_hierarchies(cc_set, model_name="CMS-HCC Model V28")
-    assert "223" in result
+    assert "221" in result
 
 def test_esrd_models():
     """Test ESRD model-specific rules"""

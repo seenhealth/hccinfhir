@@ -36,11 +36,11 @@ def extract_sld(
         raise ValueError(f'Format must be either "837" or "fhir", got {format}')
 
 
-def extract_sld_list(data: Union[List[str], List[dict]], format: Literal["837", "fhir"] = "fhir") -> List[ServiceLevelData]:
+def extract_sld_list(data: Union[List[str], List[dict]], 
+                     format: Literal["837", "fhir"] = "fhir") -> List[ServiceLevelData]:
     """Extract SLDs from a list of FHIR EOBs"""
     output = []
     for item in data:
-
         try:
             output.extend(extract_sld(item, format))
         except TypeError as e:

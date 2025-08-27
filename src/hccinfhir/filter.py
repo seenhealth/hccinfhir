@@ -9,13 +9,13 @@ professional_cpt_default = load_proc_filtering(professional_cpt_default_fn)
 def apply_filter(
     data: List[ServiceLevelData], 
     inpatient_tob: Set[str] = {'11X', '41X'},
-    outpatient_tob: Set[str] = {'12X', '13X', '43X', '71X', '73X', '76X', '77X', '85X'},
+    outpatient_tob: Set[str] = {'12X', '13X', '43X', '71X', '73X', '76X', '77X', '85X', '87X'},
     professional_cpt: Set[str] = professional_cpt_default
 ) -> List[ServiceLevelData]:
     # tob (Type of Bill) Filter is based on:
     # https://www.hhs.gov/guidance/sites/default/files/hhs-guidance-documents/2012181486-wq-092916_ra_webinar_slides_5cr_092816.pdf
     # https://www.hhs.gov/guidance/sites/default/files/hhs-guidance-documents/FinalEncounterDataDiagnosisFilteringLogic.pdf
-
+    # https://www.cms.gov/files/document/encounterdatasystemedit20495andedit01415andtob87x07162021.pdf for 87X
     # NOTE: If no facility_type or service_type, then the claim is professional, in our implementation.
     # NOTE: The original CMS logic is for the "record" level, not the service level.
     #  Thus, when preparing the service level data, put all diagnosis codes into the diagnosis field.

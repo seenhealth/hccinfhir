@@ -46,12 +46,12 @@ print(f"HCCs: {result.hcc_list}")
 HCCInFHIR supports three primary data sources for HCC risk adjustment calculations:
 
 ### 1. **CMS Encounter Data Records (EDRs)**
-- **Input**: X12 837 envelope files (text format) + demographic data from payers
+- **Input**: X12 837 5010 transaction files (text format) + demographic data from payers
 - **Use Case**: Medicare Advantage plans processing encounter data for CMS submissions
 - **Output**: Risk scores with detailed HCC mappings and interactions
 
 ### 2. **Clearinghouse 837 Claims**
-- **Input**: X12 837 institutional/professional claim files + patient demographics
+- **Input**: X12 837 5010 institutional/professional claim files + patient demographics
 - **Use Case**: Health plans and providers calculating risk scores from claims data
 - **Output**: Service-level analysis with filtering and risk score calculations
 

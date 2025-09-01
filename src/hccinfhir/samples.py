@@ -43,7 +43,7 @@ class SampleData:
             raise ValueError("case_number must be 1, 2, or 3")
         
         try:
-            with importlib.resources.open_text('hccinfhir.samples', f'sample_eob_{case_number}.json') as f:
+            with importlib.resources.open_text('hccinfhir.sample_files', f'sample_eob_{case_number}.json') as f:
                 return json.load(f)
         except FileNotFoundError:
             raise FileNotFoundError(f"Sample EOB case {case_number} not found")
@@ -75,7 +75,7 @@ class SampleData:
         """
         try:
             output = []
-            with importlib.resources.open_text('hccinfhir.samples', 'sample_eob_200.ndjson') as f:
+            with importlib.resources.open_text('hccinfhir.sample_files', 'sample_eob_200.ndjson') as f:
                 for i, line in enumerate(f):
                     if limit is not None and i >= limit:
                         break
@@ -91,13 +91,13 @@ class SampleData:
         Retrieve a specific 837 claim sample by case number.
         
         Args:
-            case_number: The case number (0 through 11). Default is 0.
+            case_number: The case number (0 through 12). Default is 0.
             
         Returns:
             A string containing the 837 X12 claim data
             
         Raises:
-            ValueError: If case_number is not between 0 and 11
+            ValueError: If case_number is not between 0 and 12
             FileNotFoundError: If the sample file cannot be found
             
         Example:
@@ -105,11 +105,11 @@ class SampleData:
             >>> print("ISA" in sample_837)
             True
         """
-        if case_number < 0 or case_number > 11:
-            raise ValueError("case_number must be between 0 and 11")
+        if case_number < 0 or case_number > 12:
+            raise ValueError("case_number must be between 0 and 12")
         
         try:
-            with importlib.resources.open_text('hccinfhir.samples', f'sample_837_{case_number}.txt') as f:
+            with importlib.resources.open_text('hccinfhir.sample_files', f'sample_837_{case_number}.txt') as f:
                 return f.read()
         except FileNotFoundError:
             raise FileNotFoundError(f"Sample 837 case {case_number} not found")
@@ -138,20 +138,20 @@ class SampleData:
             >>> # Get all samples
             >>> all_samples = SampleData.get_837_sample_list()
             >>> print(len(all_samples))
-            12
+            13
         """
         if case_numbers is None:
-            case_numbers = list(range(12))  # 0 through 11
+            case_numbers = list(range(13))  # 0 through 12
         
         # Validate case numbers
         for case_num in case_numbers:
-            if case_num < 0 or case_num > 11:
-                raise ValueError(f"case_number {case_num} must be between 0 and 11")
+            if case_num < 0 or case_num > 12:
+                raise ValueError(f"case_number {case_num} must be between 0 and 12")
         
         output = []
         for case_num in case_numbers:
             try:
-                with importlib.resources.open_text('hccinfhir.samples', f'sample_837_{case_num}.txt') as f:
+                with importlib.resources.open_text('hccinfhir.sample_files', f'sample_837_{case_num}.txt') as f:
                     output.append(f.read())
             except FileNotFoundError:
                 raise FileNotFoundError(f"Sample 837 case {case_num} not found")
@@ -180,8 +180,8 @@ class SampleData:
             ],
             "eob_case_numbers": [1, 2, 3],
             "eob_list_size": 200,
-            "837_samples": [f"sample_837_{i}.txt" for i in range(12)],
-            "837_case_numbers": list(range(12)),
+            "837_samples": [f"sample_837_{i}.txt" for i in range(13)],
+            "837_case_numbers": list(range(13)),
             "description": {
                 "eob": "Explanation of Benefits (FHIR resources) for testing HCC calculations",
                 "837": "X12 837 claim data for testing claim processing"
@@ -221,7 +221,7 @@ def get_837_sample(case_number: int = 0) -> str:
     Convenience function to get an 837 claim sample.
     
     Args:
-        case_number: The case number (0 through 11). Default is 0.
+        case_number: The case number (0 through 12). Default is 0.
         
     Returns:
         A string containing the 837 X12 claim data

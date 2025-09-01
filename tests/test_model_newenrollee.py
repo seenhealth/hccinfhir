@@ -15,7 +15,7 @@ def test_new_enrollee_calculation():
         new_enrollee=True
     )
 
-    assert result['risk_score_demographics'] > 0
+    assert result.risk_score_demographics > 0
 
 def test_disability_logic():
     """

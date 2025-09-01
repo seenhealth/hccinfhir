@@ -1,6 +1,6 @@
 import pytest
 from hccinfhir.extractor_837 import extract_sld_837
-
+from hccinfhir.samples import get_837_sample
 
 def test_malformed_segments_no_exceptions():
     """Test that malformed segments don't cause exceptions"""
@@ -90,3 +90,11 @@ def test_institutional_clm_with_empty_elements():
     # Should not raise exceptions
     result = extract_sld_837(test_data)
     assert isinstance(result, list)
+
+def test_multiple_claims_in_one_file():
+
+    # use the sample data function to get the sample data
+    sample_data = get_837_sample(12)
+    result = extract_sld_837(sample_data)
+    assert isinstance(result, list)
+    assert len(result) == 8

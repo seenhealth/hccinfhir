@@ -4,6 +4,7 @@ from hccinfhir.datamodels import Demographics, ServiceLevelData, RAFResult
 import importlib.resources
 import json
 from pydantic_core import ValidationError
+from hccinfhir import get_837_sample, extract_sld
 
 @pytest.fixture
 def sample_demographics():
@@ -23,7 +24,7 @@ def sample_demographics():
 @pytest.fixture
 def sample_eob():
     output = []
-    with importlib.resources.open_text('hccinfhir.samples', 
+    with importlib.resources.open_text('hccinfhir.sample_files', 
                                       f'sample_eob_200.ndjson') as f:
         for line in f:
             eob_data = json.loads(line)
@@ -92,15 +93,15 @@ class TestHCCInFHIR:
         processor = HCCInFHIR()
         
         result = processor.run(sample_eob, sample_demographics)
-        assert isinstance(result, dict)
-        assert 'risk_score' in result
-        assert 'hcc_list' in result
-        assert 'service_level_data' in result
-        assert isinstance(result['service_level_data'], list)
+        assert hasattr(result, 'risk_score')
+        assert hasattr(result, 'risk_score')
+        assert hasattr(result, 'hcc_list')
+        assert hasattr(result, 'service_level_data')
+        assert isinstance(result.service_level_data, list)
         
         # Verify service level data processing
-        print(result['service_level_data'])
-        sld = result['service_level_data'][0]
+        print(result.service_level_data)
+        sld = result.service_level_data[0]
         assert isinstance(sld, ServiceLevelData)
 
 
@@ -108,14 +109,26 @@ class TestHCCInFHIR:
         processor = HCCInFHIR()
         result = processor.run_from_service_data(sample_service_data, sample_demographics)
         
-        assert isinstance(result, dict)
-        assert 'risk_score' in result
-        assert 'hcc_list' in result
-        assert 'service_level_data' in result
+        assert hasattr(result, 'risk_score')
+        assert hasattr(result, 'risk_score')
+        assert hasattr(result, 'hcc_list')
+        assert hasattr(result, 'service_level_data')
         # Verify service data processing
-        sld = result['service_level_data'][0]
+        sld = result.service_level_data[0]
         assert isinstance(sld, ServiceLevelData)
         assert "E119" in sld.claim_diagnosis_codes
+
+        sld_lst = [claim.model_dump(mode='json') 
+            for claim in extract_sld(get_837_sample(1), format='837')]
+        sld_lst += [{
+            "procedure_code": "Q4205",
+            "claim_diagnosis_codes": ["E11.9", "I10", "A227"],
+            "claim_type": "71",
+            "service_date": "2024-01-15"
+        }]
+        result = processor.run_from_service_data(sld_lst, sample_demographics)
+        assert len(result.service_level_data) != len(sld_lst)
+
 
     def test_calculate_from_diagnosis(self, sample_demographics):
         processor = HCCInFHIR()
@@ -123,10 +136,10 @@ class TestHCCInFHIR:
         
         result = processor.calculate_from_diagnosis(diagnosis_codes, sample_demographics)
         
-        assert isinstance(result, dict)
-        assert 'risk_score' in result
-        assert 'hcc_list' in result
-        assert 'demographics' in result
+        assert hasattr(result, 'risk_score')
+        assert hasattr(result, 'risk_score')
+        assert hasattr(result, 'hcc_list')
+        assert hasattr(result, 'demographics')
 
     def test_filtering_behavior(self, sample_demographics, sample_service_data):
         # Test with filtering enabled
@@ -142,8 +155,8 @@ class TestHCCInFHIR:
         )
         
         # Results might be the same in this case, but verify they're dictionaries
-        assert isinstance(result_filtered, dict)
-        assert isinstance(result_unfiltered, dict)
+        assert hasattr(result_filtered, 'risk_score')
+        assert hasattr(result_unfiltered, 'risk_score')
 
     def test_filtering_behavior_with_custom_files(self, sample_demographics, sample_service_data):
         
@@ -151,15 +164,15 @@ class TestHCCInFHIR:
                              proc_filtering_filename='ra_eligible_cpt_hcpcs_2025.csv',
                              dx_cc_mapping_filename='ra_dx_to_cc_2025.csv')
         result = processor.run_from_service_data(sample_service_data, sample_demographics)
-        print(result['service_level_data'])
-        assert len(result['service_level_data']) == 1
+        print(result.service_level_data)
+        assert len(result.service_level_data) == 1
 
         processor = HCCInFHIR(filter_claims=False, 
                              proc_filtering_filename='ra_eligible_cpt_hcpcs_2023.csv',
                              dx_cc_mapping_filename='ra_dx_to_cc_2025.csv')
         result = processor.run_from_service_data(sample_service_data, sample_demographics)
         print(result)
-        assert len(result['service_level_data']) == 2
+        assert len(result.service_level_data) == 2
 
 
 
@@ -188,9 +201,8 @@ class TestHCCInFHIR:
         processor = HCCInFHIR()
         result = processor.run([], {"age": 70, "sex": "M", "dual_elgbl_cd": "00"})
 
-        print(result)
-        assert result["risk_score"] == 0.396
-        assert result["hcc_list"] == []
+        assert result.risk_score == 0.396
+        assert result.hcc_list == []
         
         # Test with custom configuration
         hcc_processor = HCCInFHIR(
@@ -210,10 +222,10 @@ class TestHCCInFHIR:
         sample_eob_list = []  # This would be populated from fixture in real test
         raf_result = hcc_processor.run(sample_eob_list, demographics)
  
-        assert "risk_score" in raf_result
-        assert "risk_score_demographics" in raf_result
-        assert "risk_score_hcc" in raf_result
-        assert "hcc_list" in raf_result
+        assert hasattr(raf_result, 'risk_score')
+        assert hasattr(raf_result, 'risk_score_demographics')
+        assert hasattr(raf_result, 'risk_score_hcc')
+        assert hasattr(raf_result, 'hcc_list')
         
 
         # Test service level data processing
@@ -226,11 +238,11 @@ class TestHCCInFHIR:
         raf_result = hcc_processor.run_from_service_data(service_data, demographics)
 
 
-        assert "risk_score" in raf_result
-        assert "hcc_list" in raf_result
+        assert hasattr(raf_result, 'risk_score')
+        assert hasattr(raf_result, 'hcc_list')
         
         # Test direct diagnosis processing
         diagnosis_codes = ['E119', 'I509']
         raf_result = hcc_processor.calculate_from_diagnosis(diagnosis_codes, demographics)
 
-        assert len(raf_result["hcc_list"]) > 0
+        assert len(raf_result.hcc_list) > 0

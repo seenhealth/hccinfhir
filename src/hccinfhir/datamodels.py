@@ -89,18 +89,20 @@ class Demographics(BaseModel):
     pbd: Optional[bool] = Field(False, description="[derived] True if PBD (PBD Model)")
 
 
-class RAFResult(TypedDict):
-    """Type definition for RAF calculation results"""
-    risk_score: float
-    risk_score_demographics: float
-    risk_score_chronic_only: float
-    risk_score_hcc: float
-    hcc_list: List[str]
-    cc_to_dx: Dict[str, Set[str]]
-    coefficients: Dict[str, float]
-    interactions: Dict[str, float]
-    demographics: Demographics
-    model_name: ModelName
-    version: str
-    diagnosis_codes: List[str]
-    service_level_data: Optional[List[ServiceLevelData]]
+class RAFResult(BaseModel):
+    """Risk adjustment calculation results"""
+    risk_score: float = Field(..., description="Final RAF score")
+    risk_score_demographics: float = Field(..., description="Demographics-only risk score")
+    risk_score_chronic_only: float = Field(..., description="Chronic conditions risk score") 
+    risk_score_hcc: float = Field(..., description="HCC conditions risk score")
+    hcc_list: List[str] = Field(default_factory=list, description="List of active HCC categories")
+    cc_to_dx: Dict[str, Set[str]] = Field(default_factory=dict, description="Condition categories mapped to diagnosis codes")
+    coefficients: Dict[str, float] = Field(default_factory=dict, description="Applied model coefficients")
+    interactions: Dict[str, float] = Field(default_factory=dict, description="Disease interaction coefficients")
+    demographics: Demographics = Field(..., description="Patient demographics used in calculation")
+    model_name: ModelName = Field(..., description="HCC model used for calculation")
+    version: str = Field(..., description="Library version")
+    diagnosis_codes: List[str] = Field(default_factory=list, description="Input diagnosis codes")
+    service_level_data: Optional[List[ServiceLevelData]] = Field(default=None, description="Processed service records")
+    
+    model_config = {"extra": "forbid", "validate_assignment": True}

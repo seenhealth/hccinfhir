@@ -113,20 +113,20 @@ def calculate_raf(diagnosis_codes: List[str],
     risk_score_chronic_only = sum(coefficients_chronic_only.values()) - risk_score_demographics
     risk_score_hcc = risk_score - risk_score_demographics
 
-    return {
-        'risk_score': risk_score, 
-        'risk_score_demographics': risk_score_demographics,
-        'risk_score_chronic_only': risk_score_chronic_only,
-        'risk_score_hcc': risk_score_hcc,
-        'hcc_list': list(hcc_set),
-        'cc_to_dx': cc_to_dx,
-        'coefficients': coefficients,
-        'interactions': interactions,
-        'demographics': demographics,
-        'model_name': model_name,
-        'version': version,
-        'diagnosis_codes': diagnosis_codes,
-    }
+    return RAFResult(
+        risk_score=risk_score,
+        risk_score_demographics=risk_score_demographics,
+        risk_score_chronic_only=risk_score_chronic_only,
+        risk_score_hcc=risk_score_hcc,
+        hcc_list=list(hcc_set),
+        cc_to_dx=cc_to_dx,
+        coefficients=coefficients,
+        interactions=interactions,
+        demographics=demographics,
+        model_name=model_name,
+        version=version,
+        diagnosis_codes=diagnosis_codes,
+    )
 
 
 

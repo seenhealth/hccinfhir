@@ -83,7 +83,58 @@ def process_service_line(segments: List[List[str]], start_index: int) -> tuple[O
             
     return ndc, service_date
 
-def extract_sld_837(content: str) -> List[ServiceLevelData]:
+def split_into_claims(segments: List[List[str]]) -> List[List[List[str]]]:
+    """Split segments into individual claims based on ST/SE boundaries.
+    
+    Each ST...SE block represents one complete claim.
+    Returns a list of claim segment lists.
+    """
+    claims = []
+    current_claim = []
+    in_transaction = False
+    st_control_number = None
+    
+    for segment in segments:
+        if len(segment) < 1:
+            continue
+            
+        seg_id = segment[0]
+        
+        if seg_id == 'ST':
+            # Start new claim transaction
+            if current_claim:  # Save previous claim if exists (shouldn't happen with valid X12)
+                claims.append(current_claim)
+            current_claim = [segment]
+            in_transaction = True
+            st_control_number = segment[2] if len(segment) > 2 else None
+            
+        elif seg_id == 'SE':
+            # End current claim transaction
+            if in_transaction:
+                current_claim.append(segment)
+                
+                # Validate control numbers match (ST02 == SE02)
+                se_control_number = segment[2] if len(segment) > 2 else None
+                if st_control_number != se_control_number:
+                    print(f"Warning: ST/SE control numbers don't match: {st_control_number} != {se_control_number}")
+                
+                claims.append(current_claim)
+                current_claim = []
+                in_transaction = False
+                st_control_number = None
+                
+        elif in_transaction:
+            # Add segment to current claim
+            current_claim.append(segment)
+    
+    # Handle case where file doesn't end with SE (malformed)
+    if current_claim:
+        print("Warning: Unclosed transaction found (missing SE)")
+        claims.append(current_claim)
+    
+    return claims
+
+def parse_837_claim_to_sld(segments: List[List[str]], claim_type: str) -> List[ServiceLevelData]:
     """Extract service level data from 837 Professional or Institutional claims
 
     Structure:
@@ -96,27 +147,12 @@ def extract_sld_837(content: str) -> List[ServiceLevelData]:
                 └── Service Line N (2400)
     
     """
-    if not content:
-        raise ValueError("Input X12 data cannot be empty")
-    
-    # Split content into segments
-    segments = [seg.strip().split('*') for seg in content.split('~') if seg.strip()]
-    
-    # Detect claim type from GS segment
-    claim_type = None
-    for segment in segments:
-        if segment[0] == 'GS' and len(segment) > 8:
-            claim_type = CLAIM_TYPES.get(segment[8])
-            break
-    
-    if not claim_type:
-        raise ValueError("Invalid or unsupported 837 format")
-    
-    encounters = []
+    slds = []
     current_data = ClaimData(claim_type=claim_type)
     in_claim_loop = False
     in_rendering_provider_loop = False
-    
+    claim_control_number = None
+
     for i, segment in enumerate(segments):
         if len(segment) < 2:
             continue
@@ -124,7 +160,10 @@ def extract_sld_837(content: str) -> List[ServiceLevelData]:
         seg_id = segment[0]
         
         # Process NM1 segments (Provider and Patient info)
-        if seg_id == 'NM1' and len(segment) > 1:
+        if seg_id == 'ST':
+            claim_control_number = segment[2] if len(segment) > 2 else None
+
+        elif seg_id == 'NM1' and len(segment) > 1:
             if segment[1] == 'IL':  # Subscriber/Patient
                 current_data.patient_id = get_segment_value(segment, 9)
                 in_claim_loop = False
@@ -236,6 +275,34 @@ def extract_sld_837(content: str) -> List[ServiceLevelData]:
                 ndc=ndc,
                 allowed_amount=None
             )
-            encounters.append(service_data)
+            slds.append(service_data)
     
-    return encounters
+    return slds
+
+
+def extract_sld_837(content: str) -> List[ServiceLevelData]:
+   
+    if not content:
+        raise ValueError("Input X12 data cannot be empty")
+    
+    # Split content into segments
+    segments = [seg.strip().split('*') 
+                for seg in content.split('~') if seg.strip()]
+    
+    # Detect claim type from GS segment
+    claim_type = None
+    for segment in segments:
+        if segment[0] == 'GS' and len(segment) > 8:
+            claim_type = CLAIM_TYPES.get(segment[8])
+            break
+    
+    if not claim_type:
+        raise ValueError("Invalid or unsupported 837 format")
+    
+    split_segments = split_into_claims(segments)
+    slds = []
+    for claim_segments in split_segments:
+        slds.extend(parse_837_claim_to_sld(claim_segments, claim_type))
+    
+    return slds
+    

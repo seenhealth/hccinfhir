@@ -12,7 +12,7 @@ from .model_calculate import calculate_raf
 from .datamodels import Demographics, ServiceLevelData, RAFResult, ModelName
 
 # Sample data functions
-from .sample_utils import (
+from .samples import (
     SampleData,
     get_eob_sample,
     get_eob_sample_list,

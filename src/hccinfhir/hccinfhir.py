@@ -88,8 +88,9 @@ class HCCInFHIR:
         # Calculate RAF score
         unique_dx_codes = self._get_unique_diagnosis_codes(sld_list)
         raf_result = self._calculate_raf_from_demographics(unique_dx_codes, demographics)
-        raf_result['service_level_data'] = sld_list
-        return raf_result
+        
+        # Create new result with service data included
+        return raf_result.model_copy(update={'service_level_data': sld_list})
     
     def run_from_service_data(self, service_data: List[Union[ServiceLevelData, Dict[str, Any]]], 
                              demographics: Union[Demographics, Dict[str, Any]]) -> RAFResult:
@@ -122,9 +123,9 @@ class HCCInFHIR:
         # Calculate RAF score
         unique_dx_codes = self._get_unique_diagnosis_codes(standardized_data)
         raf_result = self._calculate_raf_from_demographics(unique_dx_codes, demographics)
-        raf_result['service_level_data'] = standardized_data
-
-        return raf_result
+        
+        # Create new result with service data included
+        return raf_result.model_copy(update={'service_level_data': standardized_data})
         
     def calculate_from_diagnosis(self, diagnosis_codes: List[str],
                                demographics: Union[Demographics, Dict[str, Any]]) -> RAFResult:

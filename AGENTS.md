@@ -8,14 +8,14 @@ This guide streamlines contributions to the hccinfhir Python package (HCC Algori
   - `sample_files/` lightweight fixtures for tests/examples
   - Key modules: `extractor*.py`, `model_*.py`, `filter.py`, `utils.py`, `datamodels.py`
 - `tests/` — pytest suite (`test_*.py`)
-- `examples/` — runnable examples (e.g., `python examples/sample_data_usage.py`)
+- `examples/` — runnable examples (e.g., `uv run examples/sample_data_usage.py`)
 
-## Build, Test, and Development Commands
-- Create env: `python -m venv .venv && source .venv/bin/activate`
-- Install editable: `pip install -e .` (and optionally `pip install -r requirements.txt`)
-- Run tests: `python -m pytest -q`
-- Coverage: `coverage run -m pytest && coverage report -m`
-- Build a wheel: `python -m build` (uses Hatchling via `pyproject.toml`)
+## Build, Test, and Development Commands (uv)
+- Create and activate env: `uv venv && source .venv/bin/activate`
+- Install editable: `uv pip install -e .` (optionally `uv pip install -r requirements.txt`)
+- Run tests: `uv run -m pytest -q`
+- Coverage: `uv run -m coverage run -m pytest && uv run -m coverage report -m`
+- Build a wheel: `uv run -m build` (uses Hatchling via `pyproject.toml`)
 
 ## Coding Style & Naming Conventions
 - Python ≥3.8; 4‑space indentation; PEP 8; use type hints for public APIs.
@@ -27,7 +27,7 @@ This guide streamlines contributions to the hccinfhir Python package (HCC Algori
 - Framework: `pytest`. Place tests in `tests/` as `test_*.py`.
 - Add unit tests for new logic and edge cases; parametrize where helpful.
 - Use `src/hccinfhir/sample_files/` for fixture inputs; avoid external/networked data.
-- Coverage config lives in `pyproject.toml` (`[tool.coverage.*]`). Example single file run: `pytest tests/test_extractor_837.py -q`.
+- Coverage config lives in `pyproject.toml` (`[tool.coverage.*]`). Example single file run: `uv run -m pytest tests/test_extractor_837.py -q`.
 
 ## Commit & Pull Request Guidelines
 - Commits: imperative mood and scoped. Example: `feat(extractor): add 837 segment parser`.

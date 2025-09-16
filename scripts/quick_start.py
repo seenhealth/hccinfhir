@@ -17,20 +17,80 @@ from typing import Dict, List, get_args
 
 from hccinfhir import HCCInFHIR, Demographics, ModelName
 
+try:
+    from google.cloud import bigquery
+    BIGQUERY_AVAILABLE = True
+except ImportError:
+    BIGQUERY_AVAILABLE = False
+
+
+def write_to_bigquery(results_data: List[Dict], verbose: bool = False) -> None:
+    """Write risk scores to BigQuery table sgv_reporting.risk_scores."""
+    if not BIGQUERY_AVAILABLE:
+        print("Error: google-cloud-bigquery not installed. Run: pip install google-cloud-bigquery")
+        return
+
+    if not results_data:
+        print("No results to write to BigQuery")
+        return
+
+    if verbose:
+        print(f"DEBUG: Preparing {len(results_data)} records for BigQuery")
+
+    rows = []
+    for result in results_data:
+        rows.append({
+            "mrn": str(result["mrn"]),
+            "risk_score_v22": float(result["v22_score"]),
+            "hccs_v22": [str(hcc) for hcc in result["v22_hccs"]],
+            "risk_score_v28": float(result["v28_score"]),
+            "hccs_v28": [str(hcc) for hcc in result["v28_hccs"]]
+        })
+
+    if verbose:
+        print("DEBUG: Sample row for BigQuery:")
+        print(f"  {rows[0] if rows else 'No rows'}")
+
+    try:
+        client = bigquery.Client()
+        table_id = "sgv_reporting.risk_scores"
+
+        schema = [
+            bigquery.SchemaField("mrn", "STRING"),
+            bigquery.SchemaField("risk_score_v22", "FLOAT"),
+            bigquery.SchemaField("hccs_v22", "STRING", mode="REPEATED"),
+            bigquery.SchemaField("risk_score_v28", "FLOAT"),
+            bigquery.SchemaField("hccs_v28", "STRING", mode="REPEATED"),
+        ]
+
+        job_config = bigquery.LoadJobConfig(
+            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+            schema=schema
+        )
+
+        if verbose:
+            print(f"DEBUG: Writing to BigQuery table: {table_id}")
+
+        job = client.load_table_from_json(rows, table_id, job_config=job_config)
+        job.result()
+
+        dest = client.get_table(table_id)
+        print(f"Successfully wrote {dest.num_rows} rows to {table_id}")
+
+    except Exception as e:
+        print(f"Error writing to BigQuery: {e}")
+
 
 def load_demographics() -> Dict[str, Demographics]:
     """Load demographics from BigQuery table sgv_reporting.participants."""
     demographics_dict = {}
 
-    # Execute BigQuery query
     query = "SELECT mrn, gender, age FROM sgv_reporting.participants"
     cmd = ['bq', 'query', '--use_legacy_sql=false', query]
 
     try:
-        # Run BigQuery command and capture output
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
-        # Parse the BigQuery output
         lines = result.stdout.strip().split('\n')
 
         # Skip header and separator lines
@@ -93,7 +153,6 @@ def load_demographics_from_csv() -> Dict[str, Demographics]:
             for row in reader:
                 mrn = row['mrn']
                 age = int(row['age'])
-                # Convert gender to HCC format
                 sex = 'M' if row['gender'].lower() == 'male' else 'F'
                 demographics_dict[mrn] = Demographics(age=age, sex=sex)
         print(f"Loaded {len(demographics_dict)} demographics records from CSV")
@@ -109,18 +168,14 @@ def load_icd10_codes(verbose: bool = False) -> Dict[str, List[str]]:
     """Load ICD-10 codes from BigQuery table sgv_reporting.participant_diagnosis_codes."""
     codes_dict = {}
 
-    # Execute BigQuery query
     query = "SELECT mrn, icd10_codes FROM sgv_reporting.participant_diagnosis_codes"
     cmd = ['bq', 'query', '--use_legacy_sql=false', query]
 
     try:
-        # Run BigQuery command and capture output
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
-        # Parse the BigQuery output
         lines = result.stdout.strip().split('\n')
 
-        # DEBUG: Show first few lines of BigQuery output
         if verbose:
             print("DEBUG: First 10 lines of BigQuery ICD-10 output:")
             for i, line in enumerate(lines[:10]):
@@ -153,7 +208,6 @@ def load_icd10_codes(verbose: bool = False) -> Dict[str, List[str]]:
                 if len(parts) == 2:
                     mrn, icd10_codes = parts
 
-                    # DEBUG: Show first few parsed rows
                     if verbose and len(codes_dict) < 3:
                         print(f"DEBUG: Parsing row for MRN {mrn}")
                         print(f"  Raw icd10_codes: {repr(icd10_codes)}")
@@ -170,7 +224,6 @@ def load_icd10_codes(verbose: bool = False) -> Dict[str, List[str]]:
                             codes_list = [code.strip('"') for code in codes_list if code]
                             codes_dict[mrn] = codes_list
 
-                            # DEBUG: Show parsed codes for first few MRNs
                             if verbose and len(codes_dict) <= 3:
                                 print(f"  Parsed codes ({len(codes_list)}): {codes_list}")
                         else:
@@ -238,10 +291,8 @@ def run_quick_demo() -> None:
     # Minimal demographics for a beneficiary
     demographics = Demographics(age=67, sex="F")
 
-    # Example diagnosis codes (ICD-10-CM)
     diagnosis_codes: List[str] = ["E11.9", "I10", "N18.3"]
 
-    # Display results
     print("=== HCCInFHIR Quick Start ===")
     print(f"Input demographics: age={demographics.age}, sex={demographics.sex}")
     print(f"Diagnosis codes: {diagnosis_codes}")
@@ -258,24 +309,20 @@ def process_input_data(verbose: bool = False) -> None:
     """Process input data (BigQuery or CSV fallback) and display compact risk scores for each MRN."""
     print("=== Processing Input Data ===")
 
-    # Load data
     demographics_dict = load_demographics()
     codes_dict = load_icd10_codes(verbose)
 
-    # Get all MRNs that have both demographics and ICD codes
     all_mrns = set(demographics_dict.keys()) & set(codes_dict.keys())
 
     if not all_mrns:
         print("No MRNs found with both demographics and ICD-10 codes")
         return
 
-    # DEBUG: Show diagnostic summary
     if verbose:
         print(f"DEBUG: Demographics loaded for {len(demographics_dict)} MRNs")
         print(f"DEBUG: ICD-10 codes loaded for {len(codes_dict)} MRNs")
         print(f"DEBUG: MRNs with both demographics and codes: {len(all_mrns)}")
 
-        # DEBUG: Show sample of diagnosis codes
         sample_mrns = list(all_mrns)[:3]
         print(f"DEBUG: Sample diagnosis codes:")
         for mrn in sample_mrns:
@@ -285,43 +332,61 @@ def process_input_data(verbose: bool = False) -> None:
 
     print(f"Processing {len(all_mrns)} MRNs...\n")
 
-    # Process each MRN
+    bq_results = []
+
     processed_count = 0
     for mrn in sorted(all_mrns):
         demographics = demographics_dict[mrn]
         diagnosis_codes = codes_dict[mrn]
 
-        # Skip if no diagnosis codes
         if not diagnosis_codes:
             print(f"{mrn}: No diagnosis codes found")
             continue
 
-        # DEBUG: Show diagnosis codes being processed for first few MRNs
         if verbose and processed_count < 2:
             print(f"DEBUG: Processing MRN {mrn}")
             print(f"  Demographics: age={demographics.age}, sex={demographics.sex}")
             print(f"  Diagnosis codes ({len(diagnosis_codes)}): {diagnosis_codes}")
 
         results = []
+        v22_score, v22_hccs, v28_score, v28_hccs = None, [], None, []
+
         for model_name in get_args(ModelName):
             processor = HCCInFHIR(model_name=model_name)
             result = processor.calculate_from_diagnosis(diagnosis_codes, demographics)
 
-            # DEBUG: Show HCC result for first MRN, first model
             if verbose and processed_count == 0 and model_name == get_args(ModelName)[0]:
                 print(f"  First model result: risk_score={result.risk_score}, hccs={result.hcc_list}")
                 print(f"  CC to DX mapping: {dict(result.cc_to_dx)}")
                 print()
+
+            if "V22" in model_name:
+                v22_score = result.risk_score
+                v22_hccs = result.hcc_list
+            elif "V28" in model_name:
+                v28_score = result.risk_score
+                v28_hccs = result.hcc_list
 
             # Create abbreviated model name (e.g., "CMS-HCC Model V28" -> "V28")
             # short_name = model_name.split()[-1]  # Get last part (V28, V24, etc.)
             short_name = model_name
             results.append(f"{short_name}={result.risk_score:.3f} (HCCs: {sorted(result.hcc_list)})")
 
-        # Print compact one-line format
         print(f"{mrn}: {', '.join(results)}")
 
+        bq_results.append({
+            "mrn": mrn,
+            "v22_score": v22_score or 0.0,
+            "v22_hccs": v22_hccs or [],
+            "v28_score": v28_score or 0.0,
+            "v28_hccs": v28_hccs or []
+        })
+
         processed_count += 1
+
+    if bq_results:
+        print(f"\nWriting {len(bq_results)} results to BigQuery...")
+        write_to_bigquery(bq_results, verbose)
 
 
 def main() -> None:
@@ -341,4 +406,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

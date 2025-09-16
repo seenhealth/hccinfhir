@@ -85,7 +85,7 @@ def load_demographics() -> Dict[str, Demographics]:
     """Load demographics from BigQuery table sgv_reporting.participants."""
     demographics_dict = {}
 
-    query = "SELECT mrn, gender, age FROM sgv_reporting.participants"
+    query = "SELECT mrn, gender, age, coverage_type FROM sgv_reporting.participants"
     cmd = ['bq', 'query', '--use_legacy_sql=false', query]
 
     try:
@@ -95,11 +95,11 @@ def load_demographics() -> Dict[str, Demographics]:
 
         # Skip header and separator lines
         # BigQuery output format is typically:
-        # +-----+--------+-----+
-        # | mrn | gender | age |
-        # +-----+--------+-----+
-        # | ... | ...    | ... |
-        # +-----+--------+-----+
+        # +-----+--------+-----+---------------+
+        # | mrn | gender | age | coverage_type |
+        # +-----+--------+-----+---------------+
+        # | ... | ...    | ... | ...           |
+        # +-----+--------+-----+---------------+
 
         data_started = False
         for line in lines:
@@ -113,16 +113,18 @@ def load_demographics() -> Dict[str, Demographics]:
             if not data_started:
                 continue
 
-            # Parse data rows (format: | mrn | gender | age |)
+            # Parse data rows (format: | mrn | gender | age | coverage_type |)
             if line.startswith('|') and line.endswith('|'):
                 parts = [part.strip() for part in line.split('|')[1:-1]]  # Remove empty first/last elements
-                if len(parts) == 3:
-                    mrn, gender, age = parts
+                if len(parts) == 4:
+                    mrn, gender, age, coverage_type = parts
                     try:
                         age_int = int(age)
                         # Convert gender to HCC format
                         sex = 'M' if gender.lower() == 'male' else 'F'
-                        demographics_dict[mrn] = Demographics(age=age_int, sex=sex)
+                        # Set dual eligibility code based on coverage type
+                        dual_elgbl_cd = '02' if coverage_type == 'DUAL' else '00'
+                        demographics_dict[mrn] = Demographics(age=age_int, sex=sex, dual_elgbl_cd=dual_elgbl_cd)  # type: ignore
                     except (ValueError, TypeError) as e:
                         print(f"Warning: Could not parse demographics for MRN {mrn}: {e}")
                         continue
@@ -154,7 +156,10 @@ def load_demographics_from_csv() -> Dict[str, Demographics]:
                 mrn = row['mrn']
                 age = int(row['age'])
                 sex = 'M' if row['gender'].lower() == 'male' else 'F'
-                demographics_dict[mrn] = Demographics(age=age, sex=sex)
+                # For CSV fallback, default to non-dual eligible unless coverage_type column exists
+                coverage_type = row.get('coverage_type', '')
+                dual_elgbl_cd = '02' if coverage_type == 'DUAL' else '00'
+                demographics_dict[mrn] = Demographics(age=age, sex=sex, dual_elgbl_cd=dual_elgbl_cd)  # type: ignore
         print(f"Loaded {len(demographics_dict)} demographics records from CSV")
     except FileNotFoundError:
         print("Error: demographics.csv not found")
@@ -289,7 +294,7 @@ def load_icd10_codes_from_csv() -> Dict[str, List[str]]:
 def run_quick_demo() -> None:
     """Run the original quick demo with hardcoded data."""
     # Minimal demographics for a beneficiary
-    demographics = Demographics(age=67, sex="F")
+    demographics = Demographics(age=67, sex="F")  # type: ignore
 
     diagnosis_codes: List[str] = ["E11.9", "I10", "N18.3"]
 

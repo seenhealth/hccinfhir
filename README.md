@@ -27,6 +27,10 @@ print(f"Risk Score: {result.risk_score}")
 print(f"HCCs: {result.hcc_list}")
 ```
 
+## 📚 Documentation
+
+**New to HCC Risk Adjustment?** Start with our [Introduction to HCC Risk Adjustment](docs/INTRODUCTION.md) - a beginner-friendly guide that explains what HCC is, how risk scores work, and why they matter in healthcare.
+
 ## 📋 Table of Contents
 
 - [Data Sources & Use Cases](#data-sources--use-cases)

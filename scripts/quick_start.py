@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import ast
 import csv
+import json
 import subprocess
 from typing import Dict, List, get_args
 
@@ -39,13 +40,68 @@ def write_to_bigquery(results_data: List[Dict], verbose: bool = False) -> None:
 
     rows = []
     for result in results_data:
-        rows.append({
+        v22_data = result.get("v22_result", {})
+        v28_data = result.get("v28_result", {})
+
+        # Helper function to convert set to list for JSON serialization
+        def serialize_cc_to_dx(cc_to_dx):
+            if not cc_to_dx:
+                return {}
+            return {k: list(v) for k, v in cc_to_dx.items()}
+
+        # Get demographics from either model (they should be the same)
+        demographics = v22_data.get("demographics", {}) or v28_data.get("demographics", {})
+
+        row = {
+            # Identifiers
             "mrn": str(result["mrn"]),
-            "risk_score_v22": float(result["v22_score"]),
-            "hccs_v22": [str(hcc) for hcc in result["v22_hccs"]],
-            "risk_score_v28": float(result["v28_score"]),
-            "hccs_v28": [str(hcc) for hcc in result["v28_hccs"]]
-        })
+
+            # V22 Model Results
+            "v22_risk_score": float(v22_data.get("risk_score", 0.0)),
+            "v22_risk_score_demographics": float(v22_data.get("risk_score_demographics", 0.0)),
+            "v22_risk_score_chronic_only": float(v22_data.get("risk_score_chronic_only", 0.0)),
+            "v22_risk_score_hcc": float(v22_data.get("risk_score_hcc", 0.0)),
+            "v22_hcc_list": [str(hcc) for hcc in v22_data.get("hcc_list", [])],
+            "v22_diagnosis_codes": v22_data.get("diagnosis_codes", []),
+            "v22_coefficients": v22_data.get("coefficients", {}),
+            "v22_interactions": v22_data.get("interactions", {}),
+            "v22_cc_to_dx": serialize_cc_to_dx(v22_data.get("cc_to_dx", {})),
+            "v22_model_name": v22_data.get("model_name", ""),
+
+            # V28 Model Results
+            "v28_risk_score": float(v28_data.get("risk_score", 0.0)),
+            "v28_risk_score_demographics": float(v28_data.get("risk_score_demographics", 0.0)),
+            "v28_risk_score_chronic_only": float(v28_data.get("risk_score_chronic_only", 0.0)),
+            "v28_risk_score_hcc": float(v28_data.get("risk_score_hcc", 0.0)),
+            "v28_hcc_list": [str(hcc) for hcc in v28_data.get("hcc_list", [])],
+            "v28_diagnosis_codes": v28_data.get("diagnosis_codes", []),
+            "v28_coefficients": v28_data.get("coefficients", {}),
+            "v28_interactions": v28_data.get("interactions", {}),
+            "v28_cc_to_dx": serialize_cc_to_dx(v28_data.get("cc_to_dx", {})),
+            "v28_model_name": v28_data.get("model_name", ""),
+
+            # Demographics (shared across models)
+            "age": int(demographics.get("age", 0)),
+            "sex": str(demographics.get("sex", "")),
+            "dual_elgbl_cd": str(demographics.get("dual_elgbl_cd", "")),
+            "orec": str(demographics.get("orec", "")),
+            "crec": str(demographics.get("crec", "")),
+            "new_enrollee": bool(demographics.get("new_enrollee", False)),
+            "snp": bool(demographics.get("snp", False)),
+            "demographic_version": str(demographics.get("version", "")),
+            "low_income": bool(demographics.get("low_income", False)),
+            "graft_months": demographics.get("graft_months"),
+            "category": str(demographics.get("category", "")),
+            "non_aged": bool(demographics.get("non_aged", False)),
+            "orig_disabled": bool(demographics.get("orig_disabled", False)),
+            "disabled": bool(demographics.get("disabled", False)),
+            "esrd": bool(demographics.get("esrd", False)),
+            "lti": bool(demographics.get("lti", False)),
+            "fbd": bool(demographics.get("fbd", False)),
+            "pbd": bool(demographics.get("pbd", False)),
+        }
+
+        rows.append(row)
 
     if verbose:
         print("DEBUG: Sample row for BigQuery:")
@@ -56,11 +112,52 @@ def write_to_bigquery(results_data: List[Dict], verbose: bool = False) -> None:
         table_id = "sgv_reporting.risk_scores"
 
         schema = [
+            # Identifiers
             bigquery.SchemaField("mrn", "STRING"),
-            bigquery.SchemaField("risk_score_v22", "FLOAT"),
-            bigquery.SchemaField("hccs_v22", "STRING", mode="REPEATED"),
-            bigquery.SchemaField("risk_score_v28", "FLOAT"),
-            bigquery.SchemaField("hccs_v28", "STRING", mode="REPEATED"),
+
+            # V22 Model Results
+            bigquery.SchemaField("v22_risk_score", "FLOAT"),
+            bigquery.SchemaField("v22_risk_score_demographics", "FLOAT"),
+            bigquery.SchemaField("v22_risk_score_chronic_only", "FLOAT"),
+            bigquery.SchemaField("v22_risk_score_hcc", "FLOAT"),
+            bigquery.SchemaField("v22_hcc_list", "STRING", mode="REPEATED"),
+            bigquery.SchemaField("v22_diagnosis_codes", "STRING", mode="REPEATED"),
+            bigquery.SchemaField("v22_coefficients", "JSON"),
+            bigquery.SchemaField("v22_interactions", "JSON"),
+            bigquery.SchemaField("v22_cc_to_dx", "JSON"),
+            bigquery.SchemaField("v22_model_name", "STRING"),
+
+            # V28 Model Results
+            bigquery.SchemaField("v28_risk_score", "FLOAT"),
+            bigquery.SchemaField("v28_risk_score_demographics", "FLOAT"),
+            bigquery.SchemaField("v28_risk_score_chronic_only", "FLOAT"),
+            bigquery.SchemaField("v28_risk_score_hcc", "FLOAT"),
+            bigquery.SchemaField("v28_hcc_list", "STRING", mode="REPEATED"),
+            bigquery.SchemaField("v28_diagnosis_codes", "STRING", mode="REPEATED"),
+            bigquery.SchemaField("v28_coefficients", "JSON"),
+            bigquery.SchemaField("v28_interactions", "JSON"),
+            bigquery.SchemaField("v28_cc_to_dx", "JSON"),
+            bigquery.SchemaField("v28_model_name", "STRING"),
+
+            # Demographics (shared across models)
+            bigquery.SchemaField("age", "INTEGER"),
+            bigquery.SchemaField("sex", "STRING"),
+            bigquery.SchemaField("dual_elgbl_cd", "STRING"),
+            bigquery.SchemaField("orec", "STRING"),
+            bigquery.SchemaField("crec", "STRING"),
+            bigquery.SchemaField("new_enrollee", "BOOLEAN"),
+            bigquery.SchemaField("snp", "BOOLEAN"),
+            bigquery.SchemaField("demographic_version", "STRING"),
+            bigquery.SchemaField("low_income", "BOOLEAN"),
+            bigquery.SchemaField("graft_months", "INTEGER"),
+            bigquery.SchemaField("category", "STRING"),
+            bigquery.SchemaField("non_aged", "BOOLEAN"),
+            bigquery.SchemaField("orig_disabled", "BOOLEAN"),
+            bigquery.SchemaField("disabled", "BOOLEAN"),
+            bigquery.SchemaField("esrd", "BOOLEAN"),
+            bigquery.SchemaField("lti", "BOOLEAN"),
+            bigquery.SchemaField("fbd", "BOOLEAN"),
+            bigquery.SchemaField("pbd", "BOOLEAN"),
         ]
 
         job_config = bigquery.LoadJobConfig(
@@ -354,7 +451,7 @@ def process_input_data(verbose: bool = False) -> None:
             print(f"  Diagnosis codes ({len(diagnosis_codes)}): {diagnosis_codes}")
 
         results = []
-        v22_score, v22_hccs, v28_score, v28_hccs = None, [], None, []
+        v22_result, v28_result = None, None
 
         for model_name in get_args(ModelName):
             processor = HCCInFHIR(model_name=model_name)
@@ -365,12 +462,11 @@ def process_input_data(verbose: bool = False) -> None:
                 print(f"  CC to DX mapping: {dict(result.cc_to_dx)}")
                 print()
 
+            # Capture full model dumps for V22 and V28
             if "V22" in model_name:
-                v22_score = result.risk_score
-                v22_hccs = result.hcc_list
+                v22_result = result.model_dump()
             elif "V28" in model_name:
-                v28_score = result.risk_score
-                v28_hccs = result.hcc_list
+                v28_result = result.model_dump()
 
             # Create abbreviated model name (e.g., "CMS-HCC Model V28" -> "V28")
             # short_name = model_name.split()[-1]  # Get last part (V28, V24, etc.)
@@ -381,10 +477,8 @@ def process_input_data(verbose: bool = False) -> None:
 
         bq_results.append({
             "mrn": mrn,
-            "v22_score": v22_score or 0.0,
-            "v22_hccs": v22_hccs or [],
-            "v28_score": v28_score or 0.0,
-            "v28_hccs": v28_hccs or []
+            "v22_result": v22_result,
+            "v28_result": v28_result
         })
 
         processed_count += 1

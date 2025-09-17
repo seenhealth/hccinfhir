@@ -46,15 +46,15 @@ def load_dx_to_cc_mapping(filename: DxCCMappingFilename) -> Dict[Tuple[str, Mode
     """
     Load diagnosis to CC mapping from a CSV file.
     Expected format: diagnosis_code,cc,model_name
-    
+
     Args:
         filename: Name of the CSV file in the hccinfhir.data package
-        
+
     Returns:
         Dictionary mapping (diagnosis_code, model_name) to a set of CC codes
     """
     mapping: Dict[Tuple[str, ModelName], Set[str]] = {}
-    
+
     try:
         with importlib.resources.open_text('hccinfhir.data', filename) as f:
             for line in f.readlines()[1:]:  # Skip header
@@ -70,5 +70,17 @@ def load_dx_to_cc_mapping(filename: DxCCMappingFilename) -> Dict[Tuple[str, Mode
     except Exception as e:
         print(f"Error loading mapping file: {e}")
         return {}
-    
-    return mapping 
+
+    return mapping
+
+def filter_non_zero_interactions(interactions: Dict[str, float]) -> Dict[str, float]:
+    """
+    Filter out interaction values that are zero.
+
+    Args:
+        interactions: Dictionary mapping interaction names to their values
+
+    Returns:
+        Dictionary containing only interactions with non-zero values
+    """
+    return {key: value for key, value in interactions.items() if value != 0}

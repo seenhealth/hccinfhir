@@ -178,7 +178,7 @@ def write_to_bigquery(results_data: List[Dict], verbose: bool = False) -> None:
         print(f"Error writing to BigQuery: {e}")
 
 
-def load_demographics() -> Dict[str, Demographics]:
+def load_demographics(verbose: bool = False) -> Dict[str, Demographics]:
     """Load demographics from BigQuery table sgv_reporting.participants."""
     demographics_dict = {}
 
@@ -215,6 +215,8 @@ def load_demographics() -> Dict[str, Demographics]:
                 parts = [part.strip() for part in line.split('|')[1:-1]]  # Remove empty first/last elements
                 if len(parts) == 4:
                     mrn, gender, age, coverage_type = parts
+                    if verbose:
+                        print(f"DEBUG: Parsing row for MRN {mrn} sex={gender} age={age} coverage_type={coverage_type}")
                     try:
                         age_int = int(age)
                         # Convert gender to HCC format
@@ -411,7 +413,7 @@ def process_input_data(verbose: bool = False) -> None:
     """Process input data (BigQuery or CSV fallback) and display compact risk scores for each MRN."""
     print("=== Processing Input Data ===")
 
-    demographics_dict = load_demographics()
+    demographics_dict = load_demographics(verbose)
     codes_dict = load_icd10_codes(verbose)
 
     all_mrns = set(demographics_dict.keys()) & set(codes_dict.keys())
@@ -429,7 +431,7 @@ def process_input_data(verbose: bool = False) -> None:
         print(f"DEBUG: Sample diagnosis codes:")
         for mrn in sample_mrns:
             codes = codes_dict.get(mrn, [])
-            print(f"  MRN {mrn}: {len(codes)} codes = {codes[:5]}{'...' if len(codes) > 5 else ''}")
+            print(f"  MRN {mrn}: {len(codes)} codes = {codes[:5]}{'...' if len(codes) > 5 else ''} coverage_type={demographics_dict[mrn].dual_elgbl_cd}")
         print()
 
     print(f"Processing {len(all_mrns)} MRNs...\n")

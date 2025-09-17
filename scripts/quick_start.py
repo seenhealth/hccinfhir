@@ -17,6 +17,7 @@ import subprocess
 from typing import Dict, List, get_args
 
 from hccinfhir import HCCInFHIR, Demographics, ModelName
+from hccinfhir.utils import filter_non_zero_interactions
 
 try:
     from google.cloud import bigquery
@@ -64,7 +65,8 @@ def write_to_bigquery(results_data: List[Dict], verbose: bool = False) -> None:
             "v22_hcc_list": [str(hcc) for hcc in v22_data.get("hcc_list", [])],
             "v22_diagnosis_codes": v22_data.get("diagnosis_codes", []),
             "v22_coefficients": v22_data.get("coefficients", {}),
-            "v22_interactions": v22_data.get("interactions", {}),
+            "v22_interactions_all": v22_data.get("interactions", {}),
+            "v22_interactions": filter_non_zero_interactions(v22_data.get("interactions", {})),
             "v22_cc_to_dx": serialize_cc_to_dx(v22_data.get("cc_to_dx", {})),
             "v22_model_name": v22_data.get("model_name", ""),
 
@@ -76,7 +78,8 @@ def write_to_bigquery(results_data: List[Dict], verbose: bool = False) -> None:
             "v28_hcc_list": [str(hcc) for hcc in v28_data.get("hcc_list", [])],
             "v28_diagnosis_codes": v28_data.get("diagnosis_codes", []),
             "v28_coefficients": v28_data.get("coefficients", {}),
-            "v28_interactions": v28_data.get("interactions", {}),
+            "v28_interactions_all": v28_data.get("interactions", {}),
+            "v28_interactions": filter_non_zero_interactions(v28_data.get("interactions", {})),
             "v28_cc_to_dx": serialize_cc_to_dx(v28_data.get("cc_to_dx", {})),
             "v28_model_name": v28_data.get("model_name", ""),
 
@@ -123,6 +126,7 @@ def write_to_bigquery(results_data: List[Dict], verbose: bool = False) -> None:
             bigquery.SchemaField("v22_hcc_list", "STRING", mode="REPEATED"),
             bigquery.SchemaField("v22_diagnosis_codes", "STRING", mode="REPEATED"),
             bigquery.SchemaField("v22_coefficients", "JSON"),
+            bigquery.SchemaField("v22_interactions_all", "JSON"),
             bigquery.SchemaField("v22_interactions", "JSON"),
             bigquery.SchemaField("v22_cc_to_dx", "JSON"),
             bigquery.SchemaField("v22_model_name", "STRING"),
@@ -135,6 +139,7 @@ def write_to_bigquery(results_data: List[Dict], verbose: bool = False) -> None:
             bigquery.SchemaField("v28_hcc_list", "STRING", mode="REPEATED"),
             bigquery.SchemaField("v28_diagnosis_codes", "STRING", mode="REPEATED"),
             bigquery.SchemaField("v28_coefficients", "JSON"),
+            bigquery.SchemaField("v28_interactions_all", "JSON"),
             bigquery.SchemaField("v28_interactions", "JSON"),
             bigquery.SchemaField("v28_cc_to_dx", "JSON"),
             bigquery.SchemaField("v28_model_name", "STRING"),

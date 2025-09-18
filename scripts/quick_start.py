@@ -18,6 +18,7 @@ from typing import Dict, List, get_args
 
 from hccinfhir import HCCInFHIR, Demographics, ModelName
 from hccinfhir.utils import filter_non_zero_interactions
+from hccinfhir.model_calculate import calculate_raf_from_hcc
 
 try:
     from google.cloud import bigquery
@@ -43,6 +44,7 @@ def write_to_bigquery(results_data: List[Dict], verbose: bool = False) -> None:
     for result in results_data:
         v22_data = result.get("v22_result", {})
         v28_data = result.get("v28_result", {})
+        opportunity_data = result.get("opportunity_data", {})
 
         # Helper function to convert set to list for JSON serialization
         def serialize_cc_to_dx(cc_to_dx):
@@ -102,6 +104,10 @@ def write_to_bigquery(results_data: List[Dict], verbose: bool = False) -> None:
             "lti": bool(demographics.get("lti", False)),
             "fbd": bool(demographics.get("fbd", False)),
             "pbd": bool(demographics.get("pbd", False)),
+
+            # HCC Opportunities (from V22 model only)
+            "hcc_opportunities": opportunity_data.get("CMS-HCC Model V22", {}).get("hcc_opportunities", []),
+            "v22_risk_score_increase_opportunity": opportunity_data.get("CMS-HCC Model V22", {}).get("risk_score_increase_opportunity"),
         }
 
         rows.append(row)
@@ -163,6 +169,10 @@ def write_to_bigquery(results_data: List[Dict], verbose: bool = False) -> None:
             bigquery.SchemaField("lti", "BOOLEAN"),
             bigquery.SchemaField("fbd", "BOOLEAN"),
             bigquery.SchemaField("pbd", "BOOLEAN"),
+
+            # HCC Opportunities (V22 model only)
+            bigquery.SchemaField("hcc_opportunities", "STRING", mode="REPEATED"),
+            bigquery.SchemaField("v22_risk_score_increase_opportunity", "FLOAT"),
         ]
 
         job_config = bigquery.LoadJobConfig(
@@ -188,7 +198,7 @@ def load_demographics(verbose: bool = False) -> Dict[str, Demographics]:
     demographics_dict = {}
 
     query = "SELECT mrn, gender, age, coverage_type FROM sgv_reporting.participants"
-    cmd = ['bq', 'query', '--use_legacy_sql=false', query]
+    cmd = ['bq', 'query', '--use_legacy_sql=false', '--max_rows=1000', query]
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -278,7 +288,7 @@ def load_icd10_codes(verbose: bool = False) -> Dict[str, List[str]]:
     codes_dict = {}
 
     query = "SELECT mrn, icd10_codes FROM sgv_reporting.participant_diagnosis_codes"
-    cmd = ['bq', 'query', '--use_legacy_sql=false', query]
+    cmd = ['bq', 'query', '--use_legacy_sql=false', '--max_rows=1000', query]
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -395,6 +405,79 @@ def load_icd10_codes_from_csv() -> Dict[str, List[str]]:
     return codes_dict
 
 
+def load_hcc_opportunities(verbose: bool = False) -> Dict[str, List[str]]:
+    """Load HCC opportunities from BigQuery table metabase-454905.sgv_reporting.hcc_opportunities."""
+    hcc_opportunities_dict = {}
+
+    query = "SELECT mrn, HCC_code FROM `metabase-454905.sgv_reporting.hcc_opportunities` ORDER BY mrn, HCC_code"
+    cmd = ['bq', 'query', '--use_legacy_sql=false', '--max_rows=1000', query]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+        lines = result.stdout.strip().split('\n')
+
+        if verbose:
+            print("DEBUG: First 10 lines of BigQuery HCC opportunities output:")
+            for i, line in enumerate(lines[:10]):
+                print(f"  {i}: {repr(line)}")
+            print()
+
+        data_started = False
+        for line in lines:
+            line = line.strip()
+            # Skip empty lines, separator lines (starting with +), and header
+            if not line or line.startswith('+') or ('mrn' in line.lower() and 'hcc_code' in line.lower()):
+                if 'mrn' in line.lower() and 'hcc_code' in line.lower():
+                    data_started = True
+                continue
+
+            if not data_started:
+                continue
+
+            # Parse data rows (format: | mrn | HCC_code |)
+            if line.startswith('|') and line.endswith('|'):
+                parts = [part.strip() for part in line.split('|')[1:-1]]  # Remove empty first/last elements
+                if len(parts) == 2:
+                    mrn, hcc_code = parts
+
+                    if verbose and len(hcc_opportunities_dict) < 3:
+                        print(f"DEBUG: Parsing HCC opportunity for MRN {mrn}: HCC {hcc_code}")
+
+                    try:
+                        # Add HCC code to the list for this MRN
+                        if hcc_code and hcc_code != 'NULL':
+                            if mrn not in hcc_opportunities_dict:
+                                hcc_opportunities_dict[mrn] = []
+                            hcc_opportunities_dict[mrn].append(hcc_code)
+
+                    except Exception as e:
+                        print(f"Warning: Could not parse HCC opportunity for MRN {mrn}: {e}")
+
+        # Remove duplicates and sort HCC codes for each MRN
+        for mrn in hcc_opportunities_dict:
+            hcc_opportunities_dict[mrn] = sorted(list(set(hcc_opportunities_dict[mrn])))
+
+        if verbose and hcc_opportunities_dict:
+            print("DEBUG: Sample HCC opportunities after aggregation:")
+            for i, (mrn, hccs) in enumerate(list(hcc_opportunities_dict.items())[:3]):
+                print(f"  MRN {mrn}: {hccs}")
+            print()
+
+        print(f"Loaded HCC opportunities for {len(hcc_opportunities_dict)} patients from BigQuery")
+        return hcc_opportunities_dict
+
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing BigQuery command: {e}")
+        print(f"stderr: {e.stderr}")
+        print("No CSV fallback for HCC opportunities - returning empty dict")
+        return {}
+
+    except Exception as e:
+        print(f"Unexpected error loading HCC opportunities from BigQuery: {e}")
+        return {}
+
+
 def run_quick_demo() -> None:
     """Run the original quick demo with hardcoded data."""
     # Minimal demographics for a beneficiary
@@ -420,6 +503,7 @@ def process_input_data(verbose: bool = False) -> None:
 
     demographics_dict = load_demographics(verbose)
     codes_dict = load_icd10_codes(verbose)
+    hcc_opportunities_dict = load_hcc_opportunities(verbose)
 
     all_mrns = set(demographics_dict.keys()) & set(codes_dict.keys())
 
@@ -430,13 +514,16 @@ def process_input_data(verbose: bool = False) -> None:
     if verbose:
         print(f"DEBUG: Demographics loaded for {len(demographics_dict)} MRNs")
         print(f"DEBUG: ICD-10 codes loaded for {len(codes_dict)} MRNs")
+        print(f"DEBUG: HCC opportunities loaded for {len(hcc_opportunities_dict)} MRNs")
         print(f"DEBUG: MRNs with both demographics and codes: {len(all_mrns)}")
 
         sample_mrns = list(all_mrns)[:3]
         print(f"DEBUG: Sample diagnosis codes:")
         for mrn in sample_mrns:
             codes = codes_dict.get(mrn, [])
+            opps = hcc_opportunities_dict.get(mrn, [])
             print(f"  MRN {mrn}: {len(codes)} codes = {codes[:5]}{'...' if len(codes) > 5 else ''} coverage_type={demographics_dict[mrn].dual_elgbl_cd}")
+            print(f"    HCC opportunities: {opps}")
         print()
 
     print(f"Processing {len(all_mrns)} MRNs...\n")
@@ -460,13 +547,51 @@ def process_input_data(verbose: bool = False) -> None:
         results = []
         v22_result, v28_result = None, None
 
+        # Get HCC opportunities for this MRN
+        hcc_opportunities = hcc_opportunities_dict.get(mrn, [])
+
+        # Store opportunity calculations for each model
+        model_opportunity_data = {}
+
         for model_name in get_args(ModelName):
             processor = HCCInFHIR(model_name=model_name)
             result = processor.calculate_from_diagnosis(diagnosis_codes, demographics)
 
+            # Calculate HCC opportunity increase only for V22 model
+            risk_increase = None
+            if hcc_opportunities and "V22" in model_name:
+                # Combine original HCCs with opportunities
+                combined_hccs = set(result.hcc_list).union(set(hcc_opportunities))
+
+                # Calculate new risk score with combined HCCs
+                opportunity_result = calculate_raf_from_hcc(
+                    hcc_list=combined_hccs,
+                    model_name=model_name,
+                    age=demographics.age,
+                    sex=demographics.sex,
+                    dual_elgbl_cd=demographics.dual_elgbl_cd or 'NA',
+                    orec=demographics.orec or '0',
+                    crec=demographics.crec or '0',
+                    new_enrollee=demographics.new_enrollee or False,
+                    snp=demographics.snp or False,
+                    low_income=demographics.low_income or False,
+                    graft_months=demographics.graft_months
+                )
+
+                risk_increase = opportunity_result.risk_score - result.risk_score
+
+            # Store opportunity data for V22 model only
+            if "V22" in model_name:
+                model_opportunity_data[model_name] = {
+                    'hcc_opportunities': hcc_opportunities,
+                    'risk_score_increase_opportunity': risk_increase
+                }
+
             if verbose and processed_count == 0 and model_name == get_args(ModelName)[0]:
                 print(f"  First model result: risk_score={result.risk_score}, hccs={result.hcc_list}")
                 print(f"  CC to DX mapping: {dict(result.cc_to_dx)}")
+                if hcc_opportunities:
+                    print(f"  HCC opportunities: {hcc_opportunities}, potential increase: {risk_increase:.3f}")
                 print()
 
             # Capture full model dumps for V22 and V28
@@ -475,17 +600,20 @@ def process_input_data(verbose: bool = False) -> None:
             elif "V28" in model_name:
                 v28_result = result.model_dump()
 
-            # Create abbreviated model name (e.g., "CMS-HCC Model V28" -> "V28")
-            # short_name = model_name.split()[-1]  # Get last part (V28, V24, etc.)
+            # Create abbreviated model name and include opportunity info in display (V22 only)
             short_name = model_name
-            results.append(f"{short_name}={result.risk_score:.3f} (HCCs: {sorted(result.hcc_list)})")
+            result_str = f"{short_name}={result.risk_score:.3f} (HCCs: {sorted(result.hcc_list)})"
+            if hcc_opportunities and risk_increase is not None and "V22" in model_name:
+                result_str += f" [Opp: +{risk_increase:.3f}]"
+            results.append(result_str)
 
         print(f"{mrn}: {', '.join(results)}")
 
         bq_results.append({
             "mrn": mrn,
             "v22_result": v22_result,
-            "v28_result": v28_result
+            "v28_result": v28_result,
+            "opportunity_data": model_opportunity_data
         })
 
         processed_count += 1

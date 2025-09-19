@@ -45,6 +45,7 @@ def write_to_bigquery(results_data: List[Dict], verbose: bool = False) -> None:
         v22_data = result.get("v22_result", {})
         v28_data = result.get("v28_result", {})
         opportunity_data = result.get("opportunity_data", {})
+        mor_data = result.get("mor_data", {})
 
         # Helper function to convert set to list for JSON serialization
         def serialize_cc_to_dx(cc_to_dx):
@@ -107,7 +108,11 @@ def write_to_bigquery(results_data: List[Dict], verbose: bool = False) -> None:
 
             # HCC Opportunities (from V22 model only)
             "hcc_opportunities": opportunity_data.get("CMS-HCC Model V22", {}).get("hcc_opportunities", []),
-            "v22_risk_score_increase_opportunity": opportunity_data.get("CMS-HCC Model V22", {}).get("risk_score_increase_opportunity"),
+            "v22_risk_score_with_opportunities": opportunity_data.get("CMS-HCC Model V22", {}).get("risk_score_v22_with_opportunities"),
+
+            # MOR HCC Data
+            "hcc_mor": mor_data.get("hcc_mor", []),
+            "risk_score_v22_from_mor": mor_data.get("risk_score_v22_from_mor"),
         }
 
         rows.append(row)
@@ -172,7 +177,11 @@ def write_to_bigquery(results_data: List[Dict], verbose: bool = False) -> None:
 
             # HCC Opportunities (V22 model only)
             bigquery.SchemaField("hcc_opportunities", "STRING", mode="REPEATED"),
-            bigquery.SchemaField("v22_risk_score_increase_opportunity", "FLOAT"),
+            bigquery.SchemaField("v22_risk_score_with_opportunities", "FLOAT"),
+
+            # MOR HCC Data
+            bigquery.SchemaField("hcc_mor", "STRING", mode="REPEATED"),
+            bigquery.SchemaField("risk_score_v22_from_mor", "FLOAT"),
         ]
 
         job_config = bigquery.LoadJobConfig(
@@ -478,6 +487,97 @@ def load_hcc_opportunities(verbose: bool = False) -> Dict[str, List[str]]:
         return {}
 
 
+def load_mor_hcc(verbose: bool = False) -> Dict[str, List[str]]:
+    """Load MOR HCC data from BigQuery table metabase-454905.sgv_reporting.hcc_participant joined with participants."""
+    mor_hcc_dict = {}
+
+    query = """
+    SELECT p.mrn, hp.hcc_list
+    FROM `metabase-454905.sgv_reporting.hcc_participant` hp
+    INNER JOIN `metabase-454905.sgv_reporting.participants` p ON hp.patient_id = p.patient_id
+    WHERE p.mrn IS NOT NULL
+    ORDER BY p.mrn
+    """
+    cmd = ['bq', 'query', '--use_legacy_sql=false', '--max_rows=1000', query]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+        lines = result.stdout.strip().split('\n')
+
+        if verbose:
+            print("DEBUG: First 10 lines of BigQuery MOR HCC output:")
+            for i, line in enumerate(lines[:10]):
+                print(f"  {i}: {repr(line)}")
+            print()
+
+        data_started = False
+        for line in lines:
+            line = line.strip()
+            # Skip empty lines, separator lines (starting with +), and header
+            if not line or line.startswith('+') or ('mrn' in line.lower() and 'hcc_list' in line.lower()):
+                if 'mrn' in line.lower() and 'hcc_list' in line.lower():
+                    data_started = True
+                continue
+
+            if not data_started:
+                continue
+
+            # Parse data rows (format: | mrn | hcc_list |)
+            if line.startswith('|') and line.endswith('|'):
+                parts = [part.strip() for part in line.split('|')[1:-1]]  # Remove empty first/last elements
+                if len(parts) == 2:
+                    mrn, hcc_list = parts
+
+                    if verbose and len(mor_hcc_dict) < 3:
+                        print(f"DEBUG: Parsing MOR HCC data for MRN {mrn}")
+                        print(f"  Raw hcc_list: {repr(hcc_list)}")
+
+                    try:
+                        # Parse the HCC list - expecting array format like ["104"] or ["10","167","2","48","82","86"]
+                        if hcc_list and hcc_list != 'NULL':
+                            # Handle array format [HCC1, HCC2, ...]
+                            if hcc_list.startswith('[') and hcc_list.endswith(']'):
+                                hcc_list = hcc_list[1:-1]  # Remove brackets
+
+                            # Split by comma and clean each HCC code
+                            hcc_codes = [hcc.strip().strip('"') for hcc in hcc_list.split(',')]
+
+                            # Clean HCC codes - remove suffixes like "_gCopdCF" or "_gDiabetesMellit"
+                            cleaned_hcc_codes = []
+                            for hcc in hcc_codes:
+                                if hcc:  # Skip empty strings
+                                    # Extract base HCC number (everything before underscore)
+                                    base_hcc = hcc.split('_')[0]
+                                    if base_hcc and base_hcc not in cleaned_hcc_codes:
+                                        cleaned_hcc_codes.append(base_hcc)
+
+                            mor_hcc_dict[mrn] = cleaned_hcc_codes
+
+                            if verbose and len(mor_hcc_dict) <= 3:
+                                print(f"  Parsed MOR HCC codes ({len(cleaned_hcc_codes)}): {cleaned_hcc_codes}")
+                        else:
+                            mor_hcc_dict[mrn] = []
+                            if verbose and len(mor_hcc_dict) <= 3:
+                                print(f"  No MOR HCC codes (NULL or empty)")
+                    except Exception as e:
+                        print(f"Warning: Could not parse MOR HCC data for MRN {mrn}: {e}")
+                        mor_hcc_dict[mrn] = []
+
+        print(f"Loaded MOR HCC data for {len(mor_hcc_dict)} patients from BigQuery")
+        return mor_hcc_dict
+
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing BigQuery command: {e}")
+        print(f"stderr: {e.stderr}")
+        print("No CSV fallback for MOR HCC data - returning empty dict")
+        return {}
+
+    except Exception as e:
+        print(f"Unexpected error loading MOR HCC data from BigQuery: {e}")
+        return {}
+
+
 def run_quick_demo() -> None:
     """Run the original quick demo with hardcoded data."""
     # Minimal demographics for a beneficiary
@@ -504,6 +604,7 @@ def process_input_data(verbose: bool = False) -> None:
     demographics_dict = load_demographics(verbose)
     codes_dict = load_icd10_codes(verbose)
     hcc_opportunities_dict = load_hcc_opportunities(verbose)
+    mor_hcc_dict = load_mor_hcc(verbose)
 
     all_mrns = set(demographics_dict.keys()) & set(codes_dict.keys())
 
@@ -515,6 +616,7 @@ def process_input_data(verbose: bool = False) -> None:
         print(f"DEBUG: Demographics loaded for {len(demographics_dict)} MRNs")
         print(f"DEBUG: ICD-10 codes loaded for {len(codes_dict)} MRNs")
         print(f"DEBUG: HCC opportunities loaded for {len(hcc_opportunities_dict)} MRNs")
+        print(f"DEBUG: MOR HCC data loaded for {len(mor_hcc_dict)} MRNs")
         print(f"DEBUG: MRNs with both demographics and codes: {len(all_mrns)}")
 
         sample_mrns = list(all_mrns)[:3]
@@ -522,8 +624,10 @@ def process_input_data(verbose: bool = False) -> None:
         for mrn in sample_mrns:
             codes = codes_dict.get(mrn, [])
             opps = hcc_opportunities_dict.get(mrn, [])
+            mor_hccs = mor_hcc_dict.get(mrn, [])
             print(f"  MRN {mrn}: {len(codes)} codes = {codes[:5]}{'...' if len(codes) > 5 else ''} coverage_type={demographics_dict[mrn].dual_elgbl_cd}")
             print(f"    HCC opportunities: {opps}")
+            print(f"    MOR HCC codes: {mor_hccs}")
         print()
 
     print(f"Processing {len(all_mrns)} MRNs...\n")
@@ -547,11 +651,13 @@ def process_input_data(verbose: bool = False) -> None:
         results = []
         v22_result, v28_result = None, None
 
-        # Get HCC opportunities for this MRN
+        # Get HCC opportunities and MOR HCC data for this MRN
         hcc_opportunities = hcc_opportunities_dict.get(mrn, [])
+        mor_hccs = mor_hcc_dict.get(mrn, [])
 
-        # Store opportunity calculations for each model
+        # Store opportunity and MOR calculations for each model
         model_opportunity_data = {}
+        mor_risk_score = None
 
         for model_name in get_args(ModelName):
             processor = HCCInFHIR(model_name=model_name)
@@ -584,14 +690,34 @@ def process_input_data(verbose: bool = False) -> None:
             if "V22" in model_name:
                 model_opportunity_data[model_name] = {
                     'hcc_opportunities': hcc_opportunities,
-                    'risk_score_increase_opportunity': risk_increase
+                    'risk_score_v22_with_opportunities': opportunity_result.risk_score
                 }
+
+                # Calculate MOR risk score using V22 model if MOR HCCs are available
+                if mor_hccs:
+                    mor_result = calculate_raf_from_hcc(
+                        hcc_list=mor_hccs,
+                        model_name=model_name,
+                        age=demographics.age,
+                        sex=demographics.sex,
+                        dual_elgbl_cd=demographics.dual_elgbl_cd or 'NA',
+                        orec=demographics.orec or '0',
+                        crec=demographics.crec or '0',
+                        new_enrollee=demographics.new_enrollee or False,
+                        snp=demographics.snp or False,
+                        low_income=demographics.low_income or False,
+                        graft_months=demographics.graft_months
+                    )
+                    mor_risk_score = mor_result.risk_score
 
             if verbose and processed_count == 0 and model_name == get_args(ModelName)[0]:
                 print(f"  First model result: risk_score={result.risk_score}, hccs={result.hcc_list}")
                 print(f"  CC to DX mapping: {dict(result.cc_to_dx)}")
                 if hcc_opportunities:
                     print(f"  HCC opportunities: {hcc_opportunities}, potential increase: {risk_increase:.3f}")
+                if mor_hccs:
+                    mor_score_str = f"{mor_risk_score:.3f}" if mor_risk_score is not None else "N/A"
+                    print(f"  MOR HCC codes: {mor_hccs}, MOR risk score: {mor_score_str}")
                 print()
 
             # Capture full model dumps for V22 and V28
@@ -613,7 +739,11 @@ def process_input_data(verbose: bool = False) -> None:
             "mrn": mrn,
             "v22_result": v22_result,
             "v28_result": v28_result,
-            "opportunity_data": model_opportunity_data
+            "opportunity_data": model_opportunity_data,
+            "mor_data": {
+                "hcc_mor": mor_hccs,
+                "risk_score_v22_from_mor": mor_risk_score
+            }
         })
 
         processed_count += 1
